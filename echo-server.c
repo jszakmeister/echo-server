@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -28,6 +29,20 @@ die_errno(int err)
     fprintf(stderr, "error: %s\n", strerror(err));
     exit(EXIT_FAILURE);
 }
+
+
+#ifdef ENABLE_ALARM
+static int s_connection_count;
+
+
+static void
+sig_alarm(int sig)
+{
+    (void) sig;
+
+    printf("Connection count: %d\n", s_connection_count);
+}
+#endif
 
 
 /** @brief Main program entry point.
@@ -63,6 +78,20 @@ main(int argc, char *argv[])
     if (listen(server_fd, 0))
         die_errno(errno);
 
+#ifdef ENABLE_ALARM
+    {
+        struct sigaction sa;
+
+        sa.sa_handler = &sig_alarm;
+        sa.sa_flags = 0;
+        sigemptyset(&sa.sa_mask);
+        if (sigaction(SIGALRM, &sa, NULL) < 0)
+            die_errno(errno);
+
+        ualarm(1000000, 3000000);
+    }
+#endif
+
     for (;;)
     {
         struct sockaddr_in client;
@@ -72,7 +101,18 @@ main(int argc, char *argv[])
         client_fd = accept(server_fd, (struct sockaddr *) &client, &sl);
 
         if (client_fd < 0)
+        {
+#ifdef ENABLE_ALARM
+            if (errno == EINTR)
+                continue;
+#endif
+
             die_errno(errno);
+        }
+
+#ifdef ENABLE_ALARM
+        s_connection_count++;
+#endif
 
         ssize_t size, sent_size;
 
@@ -86,7 +126,14 @@ main(int argc, char *argv[])
 
             // Handle errors.
             if (size == -1)
+            {
+#ifdef ENABLE_ALARM
+                if (errno == EINTR)
+                    continue;
+#endif
+
                 die_errno(errno);
+            }
 
             // OS is saying the other side was closed.
             if (size == 0)
@@ -102,7 +149,14 @@ main(int argc, char *argv[])
             {
                 sent_size = send(client_fd, p, size, 0);
                 if (sent_size == -1)
+                {
+#ifdef ENABLE_ALARM
+                    if (errno == EINTR)
+                        continue;
+#endif
+
                     die_errno(errno);
+                }
 
                 p += sent_size;
                 size -= sent_size;

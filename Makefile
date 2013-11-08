@@ -2,6 +2,10 @@
 # CFLAGS=-O2 -g -Wall -Wextra
 # echo-server: echo-server.c
 
+ifeq ($(ENABLE_ALARM),1)
+    OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_ALARM
+endif
+
 .PHONY: all
 
 all: echo-server
