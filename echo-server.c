@@ -45,6 +45,21 @@ sig_alarm(int sig)
 #endif
 
 
+#ifdef ENABLE_FORKING
+static void
+sig_chld(int sig)
+{
+    (void) sig;
+
+    int status;
+
+    /* More than one child could have exited, so reap them all. */
+    for (; waitpid(-1, &status, WNOHANG) > 0;)
+        ;
+}
+#endif
+
+
 /** @brief Main program entry point.
     @param[in] argc  Number of arguments in @c argv.
     @param[in] argv  Command-line arguments.
@@ -92,11 +107,26 @@ main(int argc, char *argv[])
     }
 #endif
 
+#ifdef ENABLE_FORKING
+    {
+        struct sigaction sa;
+
+        sa.sa_handler = &sig_chld;
+        sa.sa_flags = SA_RESTART;
+        sigemptyset(&sa.sa_mask);
+        if (sigaction(SIGCHLD, &sa, NULL) < 0)
+            die_errno(errno);
+    }
+#endif
+
     for (;;)
     {
         struct sockaddr_in client;
         int client_fd;
         socklen_t sl = sizeof(client);
+#ifdef ENABLE_FORKING
+        pid_t pid;
+#endif
 
         client_fd = accept(server_fd, (struct sockaddr *) &client, &sl);
 
@@ -120,35 +150,21 @@ main(int argc, char *argv[])
 
         printf("Connection received from: %s\n", client_ip);
 
-        for (;;)
+#ifdef ENABLE_FORKING
+        /* Spawn off a new process to handle the client. */
+        pid = fork();
+
+        if (pid == 0)
         {
-            size = recv(client_fd, buffer, sizeof(buffer), 0);
-
-            // Handle errors.
-            if (size == -1)
-            {
-#ifdef ENABLE_ALARM
-                if (errno == EINTR)
-                    continue;
+            /* This is the child. */
+            close(server_fd);
 #endif
-
-                die_errno(errno);
-            }
-
-            // OS is saying the other side was closed.
-            if (size == 0)
-                break;
-
-            printf("Recv'd %ld bytes:\n<<<<<<\n", size);
-            write(1, buffer, size);
-            printf(">>>>>>\n");
-
-            char *p = buffer;
-
-            while (size)
+            for (;;)
             {
-                sent_size = send(client_fd, p, size, 0);
-                if (sent_size == -1)
+                size = recv(client_fd, buffer, sizeof(buffer), 0);
+
+                // Handle errors.
+                if (size == -1)
                 {
 #ifdef ENABLE_ALARM
                     if (errno == EINTR)
@@ -158,14 +174,47 @@ main(int argc, char *argv[])
                     die_errno(errno);
                 }
 
-                p += sent_size;
-                size -= sent_size;
+                // OS is saying the other side was closed.
+                if (size == 0)
+                    break;
+
+                printf("Recv'd %ld bytes:\n<<<<<<\n", size);
+                write(1, buffer, size);
+                printf(">>>>>>\n");
+
+                char *p = buffer;
+
+                while (size)
+                {
+                    sent_size = send(client_fd, p, size, 0);
+                    if (sent_size == -1)
+                    {
+#ifdef ENABLE_ALARM
+                        if (errno == EINTR)
+                            continue;
+#endif
+
+                        die_errno(errno);
+                    }
+
+                    p += sent_size;
+                    size -= sent_size;
+                }
             }
+
+            close(client_fd);
+
+            printf("Client disconnected\n");
+
+#ifdef ENABLE_FORKING
+            exit(0);
         }
-
-        close(client_fd);
-
-        printf("Client disconnected\n");
+        else
+        {
+            /* Server doesn't need this. */
+            close(client_fd);
+        }
+#endif
     }
 
     return 0;

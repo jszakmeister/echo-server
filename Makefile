@@ -6,6 +6,10 @@ ifeq ($(ENABLE_ALARM),1)
     OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_ALARM
 endif
 
+ifeq ($(ENABLE_FORKING),1)
+    OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_FORKING
+endif
+
 .PHONY: all
 
 all: echo-server
