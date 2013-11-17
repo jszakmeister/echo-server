@@ -14,6 +14,10 @@ ifeq ($(ENABLE_THREADING),1)
     OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_THREADING
 endif
 
+ifeq ($(ENABLE_DAEMON),1)
+    OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_DAEMON
+endif
+
 .PHONY: all
 
 all: echo-server

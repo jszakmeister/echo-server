@@ -12,6 +12,10 @@
 #include <pthread.h>
 #endif
 
+#ifdef ENABLE_DAEMON
+#include <fcntl.h>
+#endif
+
 
 static inline void
 die(const char *fmt, ...)
@@ -175,6 +179,75 @@ start_fork(int server_fd, int client_fd)
 #endif
 
 
+#ifdef ENABLE_DAEMON
+/** @brief Daemonize this process.
+
+    You'll want to keep this function around.  It's handy for daemonizing
+    a process.  The only other thing you might want to do is close the first
+    100 descriptors or so, just to make sure you don't ruin something
+    accidentally.
+*/
+static void
+daemonize(void)
+{
+    /*
+        Change to the root directory to prevent the file system
+        from hanging on to removed directories.
+    */
+    if (chdir("/") == -1)
+        die_errno(errno);
+
+    /* Close the standard file descriptors. */
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+
+    /*
+        Re-open them attached to /dev/null.  This may not do us much good
+        since we're closing the descriptors, however it's the last (stderr)
+        that matters for error reporting.
+    */
+    if (open("/dev/null", O_RDONLY) == -1) {
+        die("failed to reopen stdin (%s)", strerror(errno));
+    }
+
+    if (open("/dev/null", O_WRONLY) == -1) {
+        die("failed to reopen stdout (%s)", strerror(errno));
+    }
+
+    if (open("/dev/null", O_RDWR) == -1) {
+        die("failed to reopen stderr (%s)", strerror(errno));
+    }
+
+    /* This is the first step in disconnecting from the terminal. */
+    pid_t pid = fork();
+
+    if (pid != 0)
+        exit(0);
+
+    /* Start a session. */
+    if (setsid() == -1)
+    {
+        die_errno(errno);
+    }
+
+    /* Block the terminal hangup signal. */
+    signal(SIGHUP, SIG_IGN);
+
+    /*
+        This is the next step to guarantee that we're disconnected from
+        the terminal.
+    */
+    pid = fork();
+
+    if (pid != 0)
+        exit(0);
+
+    /* Now we're fully daemonized. */
+}
+#endif
+
+
 /** @brief Main program entry point.
     @param[in] argc  Number of arguments in @c argv.
     @param[in] argv  Command-line arguments.
@@ -203,6 +276,10 @@ main(int argc, char *argv[])
 
     if (bind(server_fd, (struct sockaddr *) &server, sizeof(server)))
         die_errno(errno);
+
+#ifdef ENABLE_DAEMON
+    daemonize();
+#endif
 
     if (listen(server_fd, 0))
         die_errno(errno);
