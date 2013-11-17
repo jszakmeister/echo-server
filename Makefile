@@ -10,6 +10,10 @@ ifeq ($(ENABLE_FORKING),1)
     OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_FORKING
 endif
 
+ifeq ($(ENABLE_THREADING),1)
+    OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_THREADING
+endif
+
 .PHONY: all
 
 all: echo-server

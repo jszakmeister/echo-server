@@ -8,6 +8,10 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+#ifdef ENABLE_THREADING
+#include <pthread.h>
+#endif
+
 
 static inline void
 die(const char *fmt, ...)
@@ -113,6 +117,35 @@ handle_client(int client_fd)
 
     printf("Client disconnected\n");
 }
+
+
+#ifdef ENABLE_THREADING
+static void *
+client_thread_routine(void *arg)
+{
+    int *client_fd = arg;
+
+    handle_client(*client_fd);
+
+    return NULL;
+}
+
+
+static void
+start_thread(int client_fd)
+{
+    pthread_t client_thread;
+
+    int err = pthread_create(&client_thread, NULL,
+                             client_thread_routine, &client_fd);
+    if (err != 0)
+        die_errno(err);
+
+    err = pthread_detach(client_thread);
+    if (err != 0)
+        die_errno(err);
+}
+#endif
 
 
 #ifdef ENABLE_FORKING
@@ -228,6 +261,8 @@ main(int argc, char *argv[])
 
 #if defined(ENABLE_FORKING)
         start_fork(server_fd, client_fd);
+#elif defined(ENABLE_THREADING)
+        start_thread(client_fd);
 #else
         handle_client(client_fd);
 #endif
