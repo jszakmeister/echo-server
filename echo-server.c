@@ -16,6 +16,12 @@
 #include <fcntl.h>
 #endif
 
+#ifdef ENABLE_FORKING
+#ifdef ENABLE_THREADING
+#error "You can't enable both forking and threading."
+#endif
+#endif
+
 
 static inline void
 die(const char *fmt, ...)
