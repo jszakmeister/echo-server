@@ -135,6 +135,7 @@ client_thread_routine(void *arg)
 {
     int *client_fd = arg;
 
+    /* ### We have a problem.  See the comment in start_thread(). */
     handle_client(*client_fd);
 
     return NULL;
@@ -146,6 +147,15 @@ start_thread(int client_fd)
 {
     pthread_t client_thread;
 
+    /*
+        ### The cat is out of the bag.  There's an intentional bug here.
+        client_fd is being stored on the stack.  We're passing a pointer to it
+        for use in client_thread_routine(), but that function can execute at
+        some arbitrary time in the future.  In the meantime, this function could
+        exit and some other functions be allowed to execute and corrupting this
+        position on the stack.  All kinds of nasty things could happen... but
+        not always.  Most of the time, it works just fine. :-(
+    */
     int err = pthread_create(&client_thread, NULL,
                              client_thread_routine, &client_fd);
     if (err != 0)
