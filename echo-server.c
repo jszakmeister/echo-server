@@ -99,7 +99,7 @@ handle_client(int client_fd)
         if (size == 0)
             break;
 
-        printf("Recv'd %ld bytes:\n<<<<<<\n", size);
+        printf("%d: Recv'd %ld bytes:\n<<<<<<\n", client_fd, size);
         (void) write(1, buffer, size);
         printf(">>>>>>\n");
 
