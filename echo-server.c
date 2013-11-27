@@ -10,6 +10,9 @@
 
 #ifdef ENABLE_THREADING
 #include <pthread.h>
+#ifdef SHOW_BUG
+#include <time.h>
+#endif
 #endif
 
 #ifdef ENABLE_DAEMON
@@ -41,6 +44,20 @@ static inline void
 die_errno(int err)
 {
     fprintf(stderr, "error: %s\n", strerror(err));
+    exit(EXIT_FAILURE);
+}
+
+
+static inline void
+die_errno_msg(int err, const char *fmt, ...)
+{
+    va_list ap;
+
+    va_start(ap, fmt);
+    fprintf(stderr, "error: ");
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, " (%s)\n", strerror(err));
+    va_end(ap);
     exit(EXIT_FAILURE);
 }
 
@@ -80,6 +97,8 @@ handle_client(int client_fd)
     char buffer[128];
     ssize_t size, sent_size;
 
+    printf("Handling fd: %d\n", client_fd);
+
     for (;;)
     {
         size = recv(client_fd, buffer, sizeof(buffer), 0);
@@ -92,7 +111,7 @@ handle_client(int client_fd)
                 continue;
 #endif
 
-            die_errno(errno);
+            die_errno_msg(errno, "recv failed (%d)", client_fd);
         }
 
         // OS is saying the other side was closed.
@@ -111,11 +130,11 @@ handle_client(int client_fd)
             if (sent_size == -1)
             {
 #ifdef ENABLE_ALARM
-                if (errno == EINTR)
+                if (err == EINTR)
                     continue;
 #endif
 
-                die_errno(errno);
+                die_errno_msg(errno, "send failed (%d)", client_fd);
             }
 
             p += sent_size;
@@ -125,7 +144,7 @@ handle_client(int client_fd)
 
     close(client_fd);
 
-    printf("Client disconnected\n");
+    printf("Client disconnected (%d)\n", client_fd);
 }
 
 
@@ -142,6 +161,39 @@ client_thread_routine(void *arg)
 }
 
 
+#ifdef SHOW_BUG
+static void
+consume_some_stack(void)
+{
+    long buffer[100];
+    int i;
+    long new_seed = 0;
+
+    for (i = 0; i < 100; i++)
+        buffer[i] = random();
+
+    for (i = 0; i < 100; i++)
+        new_seed += buffer[i];
+
+    new_seed /= 100;
+
+    /*
+        This is here to actually use something in the routine so gcc doesn't
+        optimize it away.
+    */
+    srandom(new_seed);
+}
+
+static void *
+client_thread_routine_sleep(void *arg)
+{
+    sleep((int) (random() % 5));
+
+    return client_thread_routine(arg);
+}
+#endif
+
+
 static void
 start_thread(int client_fd)
 {
@@ -156,8 +208,14 @@ start_thread(int client_fd)
         position on the stack.  All kinds of nasty things could happen... but
         not always.  Most of the time, it works just fine. :-(
     */
+#ifdef SHOW_BUG
+    int err = pthread_create(&client_thread, NULL,
+                             client_thread_routine_sleep, &client_fd);
+#else
     int err = pthread_create(&client_thread, NULL,
                              client_thread_routine, &client_fd);
+#endif
+
     if (err != 0)
         die_errno(err);
 
@@ -276,6 +334,10 @@ main(int argc, char *argv[])
     (void) argc;
     (void) argv;
 
+#ifdef SHOW_BUG
+    srandom((long int) time(NULL));
+#endif
+
     int server_fd = socket(PF_INET, SOCK_STREAM, 0);
 
     if (server_fd < 0)
@@ -350,12 +412,17 @@ main(int argc, char *argv[])
 
         char *client_ip = inet_ntoa(client.sin_addr);
 
-        printf("Connection received from: %s\n", client_ip);
+        printf("Connection received from: %s (%d)\n", client_ip, client_fd);
 
 #if defined(ENABLE_FORKING)
         start_fork(server_fd, client_fd);
 #elif defined(ENABLE_THREADING)
+#ifdef SHOW_BUG
         start_thread(client_fd);
+        consume_some_stack();
+#else
+        start_thread(client_fd);
+#endif
 #else
         handle_client(client_fd);
 #endif
