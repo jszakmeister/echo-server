@@ -100,7 +100,7 @@ handle_client(int client_fd)
             break;
 
         printf("Recv'd %ld bytes:\n<<<<<<\n", size);
-        write(1, buffer, size);
+        (void) write(1, buffer, size);
         printf(">>>>>>\n");
 
         char *p = buffer;
