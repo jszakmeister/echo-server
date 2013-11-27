@@ -18,12 +18,18 @@ ifeq ($(ENABLE_DAEMON),1)
     OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_DAEMON
 endif
 
+
+UNAME=$(shell uname)
+ifeq ($(UNAME),Linux)
+    LIBS := -lpthread
+endif
+
 .PHONY: all
 
 all: echo-server
 
 echo-server: echo-server.c
-	gcc -O2 -g -Wall -Wextra $(OTHER_FLAGS) -o $@ $^
+	gcc -O2 -g -Wall -Wextra $(OTHER_FLAGS) -o $@ $^ $(LIBS)
 
 .PHONY: clean
 
