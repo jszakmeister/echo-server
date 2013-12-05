@@ -25,6 +25,12 @@
 #endif
 #endif
 
+#ifdef ENABLE_PRIV
+#include <inttypes.h>
+#include <sys/types.h>
+#include <pwd.h>
+#endif
+
 
 static inline void
 die(const char *fmt, ...)
@@ -322,6 +328,27 @@ daemonize(void)
 #endif
 
 
+#ifdef ENABLE_PRIV
+uid_t
+getuid_for_name(const char *name)
+{
+    struct passwd *p;
+    char *endptr;
+    uid_t u;
+
+    if (! name || *name == '\0')
+        return -1;
+
+    u = strtol(name, &endptr, 10);
+    if (*endptr == '\0')
+        return u;
+
+    p = getpwnam(name);
+    return p->pw_uid;
+}
+#endif
+
+
 /** @brief Main program entry point.
     @param[in] argc  Number of arguments in @c argv.
     @param[in] argv  Command-line arguments.
@@ -354,6 +381,16 @@ main(int argc, char *argv[])
 
     if (bind(server_fd, (struct sockaddr *) &server, sizeof(server)))
         die_errno(errno);
+
+#ifdef ENABLE_PRIV
+    if (getuid() == 0)
+    {
+        uid_t u = getuid_for_name("nobody");
+        if (u == (uid_t) -1)
+            die("unable to get uid for 'nobody'");
+        setuid(u);
+    }
+#endif
 
 #ifdef ENABLE_DAEMON
     daemonize();

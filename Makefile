@@ -22,6 +22,10 @@ ifeq ($(ENABLE_DAEMON),1)
     OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_DAEMON
 endif
 
+ifeq ($(ENABLE_PRIV),1)
+    OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_PRIV
+endif
+
 
 UNAME=$(shell uname)
 ifeq ($(UNAME),Linux)
