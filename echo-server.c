@@ -380,7 +380,7 @@ main(int argc, char *argv[])
     server.sin_port = htons(8888);
 
     if (bind(server_fd, (struct sockaddr *) &server, sizeof(server)))
-        die_errno(errno);
+        die_errno_msg(errno, "cannot open port");
 
 #ifdef ENABLE_PRIV
     if (getuid() == 0)
