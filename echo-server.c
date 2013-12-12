@@ -31,6 +31,11 @@
 #include <pwd.h>
 #endif
 
+#ifdef ENABLE_OPTS
+#include <getopt.h>
+#include <limits.h>
+#endif
+
 
 static inline void
 die(const char *fmt, ...)
@@ -124,7 +129,7 @@ handle_client(int client_fd)
         if (size == 0)
             break;
 
-        printf("%d: Recv'd %ld bytes:\n<<<<<<\n", client_fd, size);
+        printf("%d: Recv'd %ld bytes:\n<<<<<<\n", client_fd, (long) size);
         (void) write(1, buffer, size);
         printf(">>>>>>\n");
 
@@ -349,6 +354,54 @@ getuid_for_name(const char *name)
 #endif
 
 
+#ifdef ENABLE_OPTS
+int
+convert_int(const char *str)
+{
+    char *endptr;
+    long int val;
+
+    errno = 0;    /* To distinguish success/failure after call */
+    val = strtol(str, &endptr, 10);
+
+    /* Check for various possible errors */
+
+    if ((errno == ERANGE && (val == LONG_MAX || val == LONG_MIN))
+        || (errno != 0 && val == 0)
+        || (*endptr != '\0'))
+    {
+        die_errno_msg(errno, "could not convert %s to a number", str);
+    }
+
+    if (endptr == str)
+    {
+        die("no number given");
+    }
+
+    return (int) val;
+}
+
+
+static void
+show_help_and_exit(void)
+{
+    printf(
+        "usage: echo-server [options]\n"
+        "\n"
+        "Options:\n"
+        "  -p PORT, --port PORT     The port number to listen on.  Defaults to\n"
+        "                           8888.\n"
+        "  -b ADDR, --bind ADDR     The address to listen on.  Defaults to\n"
+        "                           0.0.0.0.\n"
+#ifdef ENABLE_DAEMON
+        "  --foreground             Run the server in the foreground.\n"
+#endif
+        "\n");
+    exit(0);
+}
+#endif
+
+
 /** @brief Main program entry point.
     @param[in] argc  Number of arguments in @c argv.
     @param[in] argv  Command-line arguments.
@@ -358,8 +411,71 @@ getuid_for_name(const char *name)
 int
 main(int argc, char *argv[])
 {
+    struct sockaddr_in server;
+    server.sin_family = PF_INET;
+    server.sin_addr.s_addr = INADDR_ANY;
+    server.sin_port = htons(8888);
+
+#ifdef ENABLE_OPTS
+#ifdef ENABLE_DAEMON
+    int foreground = 0;
+#endif
+    int show_help = 0;
+    struct option long_options[] =
+    {
+        {"port",        required_argument,  NULL,           'p'},
+        {"bind",        required_argument,  NULL,           'b'},
+        {"help",        no_argument,        &show_help,     1},
+#ifdef ENABLE_DAEMON
+        {"foreground",  no_argument,        &foreground,    1},
+#endif
+        {0, 0, 0, 0}
+    };
+
+    for (;;)
+    {
+        int c;
+        int option_index = 0;
+
+        c = getopt_long(argc, argv, "ha:p:", long_options, &option_index);
+        if (c == -1)
+            break;
+
+        switch (c)
+        {
+        case 0:
+            if (long_options[option_index].flag != NULL)
+                break;
+            die("failed to handle option: %s\n",
+                long_options[option_index].name);
+            break;
+
+        case 'h':
+            show_help = 1;
+            break;
+
+        case 'b':
+            if (! inet_aton(optarg, &server.sin_addr))
+                die("unable to parse addr: %s", optarg);
+            break;
+
+        case 'p':
+            server.sin_port = htons((short) convert_int(optarg));
+            break;
+
+        default:
+            /* getopt already print an error message for us. */
+            exit(EXIT_FAILURE);
+            break;
+        }
+    }
+
+    if (show_help)
+        show_help_and_exit();
+#else
     (void) argc;
     (void) argv;
+#endif
 
 #ifdef SHOW_BUG
     srandom((long int) time(NULL));
@@ -373,11 +489,6 @@ main(int argc, char *argv[])
     int on = 1;
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
         die_errno(errno);
-
-    struct sockaddr_in server;
-    server.sin_family = PF_INET;
-    server.sin_addr.s_addr = INADDR_ANY;
-    server.sin_port = htons(8888);
 
     if (bind(server_fd, (struct sockaddr *) &server, sizeof(server)))
         die_errno_msg(errno, "cannot open port");
@@ -393,7 +504,10 @@ main(int argc, char *argv[])
 #endif
 
 #ifdef ENABLE_DAEMON
-    daemonize();
+#ifdef ENABLE_OPTS
+    if (! foreground)
+#endif
+        daemonize();
 #endif
 
     if (listen(server_fd, 0))

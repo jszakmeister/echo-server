@@ -26,6 +26,10 @@ ifeq ($(ENABLE_PRIV),1)
     OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_PRIV
 endif
 
+ifeq ($(ENABLE_OPTS),1)
+    OTHER_FLAGS := $(OTHER_FLAGS) -DENABLE_OPTS
+endif
+
 
 UNAME=$(shell uname)
 ifeq ($(UNAME),Linux)
